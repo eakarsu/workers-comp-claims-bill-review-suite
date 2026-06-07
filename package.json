@@ -1,0 +1,14 @@
+{
+  "name": "workers-comp-claims-bill-review-suite",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Workers compensation claim operations, medical bill review, utilization review, return-to-work, and litigation risk.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

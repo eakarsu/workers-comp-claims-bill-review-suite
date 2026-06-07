@@ -1,0 +1,145 @@
+{
+  "slug": "workers-comp-claims-bill-review-suite",
+  "title": "Workers Comp Claims Bill Review Suite",
+  "buyer": "Workers comp insurers, TPAs, self-insured employers",
+  "description": "Workers compensation claim operations, medical bill review, utilization review, return-to-work, and litigation risk.",
+  "modules": [
+    {
+      "id": "claims",
+      "table": "claims",
+      "label": "Claims",
+      "description": "Claims workspace for Workers Comp Claims Bill Review Suite.",
+      "subfeatures": [
+        "Claim intake",
+        "Jurisdiction",
+        "Compensability"
+      ],
+      "prefix": "C",
+      "seedValues": [
+        "Claim intake",
+        "Jurisdiction",
+        "Compensability"
+      ]
+    },
+    {
+      "id": "bill-review",
+      "table": "billReview",
+      "label": "Bill Review",
+      "description": "Bill Review workspace for Workers Comp Claims Bill Review Suite.",
+      "subfeatures": [
+        "Fee schedule",
+        "Duplicate bills",
+        "Savings"
+      ],
+      "prefix": "BR",
+      "seedValues": [
+        "Fee schedule",
+        "Duplicate bills",
+        "Savings"
+      ]
+    },
+    {
+      "id": "utilization-review",
+      "table": "utilizationReview",
+      "label": "Utilization Review",
+      "description": "Utilization Review workspace for Workers Comp Claims Bill Review Suite.",
+      "subfeatures": [
+        "Treatment requests",
+        "Guidelines",
+        "Determinations"
+      ],
+      "prefix": "UR",
+      "seedValues": [
+        "Treatment requests",
+        "Guidelines",
+        "Determinations"
+      ]
+    },
+    {
+      "id": "provider-network",
+      "table": "providerNetwork",
+      "label": "Provider Network",
+      "description": "Provider Network workspace for Workers Comp Claims Bill Review Suite.",
+      "subfeatures": [
+        "Panel routing",
+        "Out-of-network",
+        "Quality"
+      ],
+      "prefix": "PN",
+      "seedValues": [
+        "Panel routing",
+        "Out-of-network",
+        "Quality"
+      ]
+    },
+    {
+      "id": "return-to-work",
+      "table": "returnToWork",
+      "label": "Return To Work",
+      "description": "Return To Work workspace for Workers Comp Claims Bill Review Suite.",
+      "subfeatures": [
+        "Restrictions",
+        "Modified duty",
+        "Employer tasks"
+      ],
+      "prefix": "RTW",
+      "seedValues": [
+        "Restrictions",
+        "Modified duty",
+        "Employer tasks"
+      ]
+    },
+    {
+      "id": "litigation",
+      "table": "litigation",
+      "label": "Litigation Risk",
+      "description": "Litigation Risk workspace for Workers Comp Claims Bill Review Suite.",
+      "subfeatures": [
+        "Attorney involvement",
+        "Reserve pressure",
+        "Escalation"
+      ],
+      "prefix": "LR",
+      "seedValues": [
+        "Attorney involvement",
+        "Reserve pressure",
+        "Escalation"
+      ]
+    },
+    {
+      "id": "payments",
+      "table": "payments",
+      "label": "Payments",
+      "description": "Payments workspace for Workers Comp Claims Bill Review Suite.",
+      "subfeatures": [
+        "Indemnity",
+        "Medical",
+        "Recovery"
+      ],
+      "prefix": "P",
+      "seedValues": [
+        "Indemnity",
+        "Medical",
+        "Recovery"
+      ]
+    },
+    {
+      "id": "compliance",
+      "table": "compliance",
+      "label": "State Compliance",
+      "description": "State Compliance workspace for Workers Comp Claims Bill Review Suite.",
+      "subfeatures": [
+        "Forms",
+        "Deadlines",
+        "Penalties"
+      ],
+      "prefix": "SC",
+      "seedValues": [
+        "Forms",
+        "Deadlines",
+        "Penalties"
+      ]
+    }
+  ],
+  "port": 5609
+}
