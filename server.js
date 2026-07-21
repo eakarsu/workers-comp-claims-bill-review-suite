@@ -9,7 +9,9 @@ const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'app.config.json'
 const PORT = Number(process.env.PORT || config.port || 5500);
 const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const STORE_FILE = path.join(__dirname, 'data', 'store.local.json');
+const STORE_FILE = process.env.STORE_FILE
+  ? path.resolve(process.env.STORE_FILE)
+  : path.join(__dirname, 'data', 'store.local.json');
 const sessions = new Map();
 
 const standardModules = [
