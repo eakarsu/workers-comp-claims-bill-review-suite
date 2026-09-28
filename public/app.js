@@ -40,6 +40,16 @@ async function login(event) {
   }
 }
 
+function fillDemoCredentials() {
+  const slug = state.publicConfig?.slug || 'app';
+  const email = document.querySelector('.login-form input[name="email"]');
+  const password = document.querySelector('.login-form input[name="password"]');
+  if (email) email.value = 'admin@' + slug + '.local';
+  if (password) password.value = 'admin123';
+  const error = document.querySelector('.login-error');
+  if (error) error.textContent = '';
+}
+
 function logout() {
   localStorage.removeItem(location.pathname + ':user');
   localStorage.removeItem(location.pathname + ':token');
@@ -98,7 +108,7 @@ async function renderLogin() {
   }
   const slug = state.publicConfig.slug;
   document.getElementById('app').className = 'auth-screen';
-  document.getElementById('app').innerHTML = '<main class="login-panel"><div class="brand-mark">AI</div><h1>' + esc(state.publicConfig.title) + '</h1><p class="muted">Sign in to open the sidebar app.</p><form class="login-form" onsubmit="login(event)"><label>Email<input name="email" value="admin@' + esc(slug) + '.local"></label><label>Password<input name="password" type="password" value="admin123"></label><button class="button">Sign In</button><div class="login-error"></div></form><p class="muted small">Demo users use admin123, manager123, or analyst123.</p></main>';
+  document.getElementById('app').innerHTML = '<main class="login-panel"><div class="brand-mark">AI</div><h1>' + esc(state.publicConfig.title) + '</h1><p class="muted">Sign in to open the sidebar app.</p><form class="login-form" onsubmit="login(event)"><label>Email<input name="email" value="admin@' + esc(slug) + '.local"></label><label>Password<input name="password" type="password" value="admin123"></label><button type="button" class="button" onclick="fillDemoCredentials()">Auto Fill Demo Credentials</button><button class="button">Sign In</button><div class="login-error"></div></form><p class="muted small">Demo users use admin123, manager123, or analyst123.</p></main>';
 }
 
 function shell(inner) {

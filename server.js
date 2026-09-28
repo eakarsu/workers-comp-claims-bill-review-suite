@@ -424,6 +424,11 @@ const server = http.createServer(async (req, res) => {
 
     if (parsed.pathname === '/api/health') return sendJson(res, { ok: true, app: config.slug, title: config.title, persisted: fs.existsSync(STORE_FILE), records: Object.fromEntries(Object.entries(store.data).map(([k, v]) => [k, v.length])) });
     if (parsed.pathname === '/api/public-config') return sendJson(res, { slug: config.slug, title: config.title, description: config.description, port: PORT });
+    if (parsed.pathname === '/api/auth/demo-credentials' && req.method === 'GET') {
+      if (process.env.NODE_ENV === 'production') return sendJson(res, { error: 'Not found' }, 404);
+      res.setHeader('Cache-Control', 'no-store');
+      return sendJson(res, { email: `admin@${config.slug}.local`, password: 'admin123' });
+    }
     if (parsed.pathname === '/api/auth/login' && req.method === 'POST') {
       const body = await readBody(req);
       const user = store.users.find((u) => u.email === body.email && u.password === body.password && u.active !== false);
