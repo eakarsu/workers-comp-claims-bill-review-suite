@@ -40,17 +40,22 @@ async function login(event) {
   }
 }
 
-function fillDemoCredentials() {
-  const slug = state.publicConfig?.slug || 'app';
-  const email = document.querySelector('.login-form input[name="email"]');
-  const password = document.querySelector('.login-form input[name="password"]');
-  if (email) email.value = 'admin@' + slug + '.local';
-  if (password) password.value = 'admin123';
+async function fillDemoCredentials() {
   const error = document.querySelector('.login-error');
   if (error) error.textContent = '';
+  try {
+    const credentials = await api('/api/auth/demo-credentials');
+    const email = document.querySelector('.login-form input[name="email"]');
+    const password = document.querySelector('.login-form input[name="password"]');
+    if (email) email.value = credentials.email;
+    if (password) password.value = credentials.password;
+  } catch (err) {
+    if (error) error.textContent = 'Demo credentials are unavailable. ' + err.message;
+  }
 }
 
 function logout() {
+  cancelAIReview(false); reviewState.reports = []; reviewState.result = null; reviewState.selectedReport = null; reviewState.loaded = false;
   localStorage.removeItem(location.pathname + ':user');
   localStorage.removeItem(location.pathname + ':token');
   state.user = null;
@@ -60,6 +65,7 @@ function logout() {
 }
 
 function setActive(id) {
+  cancelAIReview(false); reviewState.selectedReport = null;
   state.active = id;
   state.selected = null;
   state.query = '';
@@ -106,15 +112,14 @@ async function renderLogin() {
   if (!state.publicConfig) {
     try { state.publicConfig = await api('/api/public-config'); } catch { state.publicConfig = { slug: 'app', title: 'Operations Suite' }; }
   }
-  const slug = state.publicConfig.slug;
   document.getElementById('app').className = 'auth-screen';
-  document.getElementById('app').innerHTML = '<main class="login-panel"><div class="brand-mark">AI</div><h1>' + esc(state.publicConfig.title) + '</h1><p class="muted">Sign in to open the sidebar app.</p><form class="login-form" onsubmit="login(event)"><label>Email<input name="email" value="admin@' + esc(slug) + '.local"></label><label>Password<input name="password" type="password" value="admin123"></label><button type="button" class="button" onclick="fillDemoCredentials()">Auto Fill Demo Credentials</button><button class="button">Sign In</button><div class="login-error"></div></form><p class="muted small">Demo users use admin123, manager123, or analyst123.</p></main>';
+  document.getElementById('app').innerHTML = '<main class="login-panel"><div class="brand-mark">AI</div><h1>' + esc(state.publicConfig.title) + '</h1><p class="muted">Sign in to open the sidebar app.</p><form class="login-form" onsubmit="login(event)"><label>Email<input name="email" autocomplete="username"></label><label>Password<input name="password" type="password" autocomplete="current-password"></label><button type="button" class="button" onclick="fillDemoCredentials()">Fill Demo Credentials</button><button class="button">Sign In</button><div class="login-error" role="status"></div></form></main>';
 }
 
 function shell(inner) {
   const nav = [{ id: 'dashboard', label: 'Dashboard' }, ...state.boot.modules, { id: 'ai-center', label: 'AI Center' }, { id: 'rules', label: 'Rules & Jobs' }, { id: 'reports', label: 'Reports' }];
   document.getElementById('app').className = 'shell';
-  document.getElementById('app').innerHTML = '<aside class="sidebar"><div class="brand"><div class="brand-mark">AI</div><h1>' + esc(state.boot.config.title) + '</h1><p>' + esc(state.boot.config.description) + '</p></div><div class="user-box"><strong>' + esc(state.user.name) + '</strong><span>' + esc(state.user.role) + '</span><button onclick="logout()">Sign out</button></div><div class="nav-label">Workspace</div><nav class="nav">' + nav.map((item) => '<button class="' + (state.active === item.id ? 'active' : '') + '" onclick="setActive(&quot;' + item.id + '&quot;)"><span class="nav-initial">' + esc(initial(item.label)) + '</span><span>' + esc(item.label) + '</span></button>').join('') + '</nav></aside><main class="main">' + inner + '</main>';
+  document.getElementById('app').innerHTML = '<aside class="sidebar"><div class="brand"><div class="brand-mark">AI</div><h1>' + esc(state.boot.config.title) + '</h1><p>' + esc(state.boot.config.description) + '</p></div><div class="user-box"><strong>' + esc(state.user.name) + '</strong><span>' + esc(state.user.role) + '</span><button onclick="logout()">Sign out</button></div><div class="nav-label">Workspace</div><nav class="nav">' + nav.map((item) => '<button class="' + (state.active === item.id ? 'active' : '') + '" onclick="setActive(&quot;' + item.id + '&quot;)"><span class="nav-initial">' + esc(initial(item.label)) + '</span><span>' + esc(item.label) + '</span></button>').join('') + '</nav></aside><main class="main">' + inner + operationsDialog() + '</main>';
 }
 
 function topbar(title, description, eyebrow = 'Operations') {
@@ -195,16 +200,13 @@ function formPanel(module, selected) {
 
 function moduleView(module) {
   const rows = getRows(module);
-  const selected = rows.find((r) => r.id === state.selected) || rows[0];
+  const selected = rows.find((r) => r.id === state.selected);
   const keys = rows[0] ? Object.keys(rows[0]).slice(0, 9) : [];
   const upload = module.table === 'documents' && can('write') ? '<article class="panel"><h3>Upload Document Metadata</h3><form class="form-grid compact" onsubmit="uploadDocument(event)"><label>File Name<input name="fileName" placeholder="evidence.pdf"></label><label>Document Type<input name="documentType" placeholder="Policy"></label><label>Owner<input name="owner" placeholder="Reviewer"></label><label>Notes<input name="notes" placeholder="Context"></label><button class="button">Add Upload</button></form></article>' : '';
-  return topbar(module.label, module.description, 'Feature Workspace') + '<section class="content grid"><div class="panel"><div class="subfeatures">' + module.subfeatures.map((s) => '<span class="sub-pill">' + esc(s) + '</span>').join('') + '</div><div class="toolbar"><input placeholder="Search records" value="' + esc(state.query) + '" oninput="state.query=this.value;render();"><select onchange="state.status=this.value;render();">' + ['all', 'open', 'progress', 'review', 'blocked', 'complete', 'high'].map((x) => '<option value="' + x + '" ' + (state.status === x ? 'selected' : '') + '>' + x + '</option>').join('') + '</select>' + (can('write') ? '<button class="button" onclick="addNew(&quot;' + module.id + '&quot;)">Add</button>' : '<span class="pill">Read only</span>') + '</div><div class="table-wrap"><table><thead><tr>' + keys.map((k) => '<th>' + esc(k) + '</th>').join('') + '</tr></thead><tbody>' + rows.map((row) => '<tr class="' + (selected && selected.id === row.id ? 'selected' : '') + '" onclick="selectRow(&quot;' + row.id + '&quot;)">' + keys.map((k) => '<td>' + (/status|priority|riskScore/i.test(k) ? '<span class="pill ' + statusClass(row[k]) + '">' + esc(row[k]) + '</span>' : esc(Array.isArray(row[k]) ? row[k].join(', ') : row[k])) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div></div>' + upload + '<div class="grid columns-2"><article class="panel"><h3>Record Detail</h3><div class="detail-grid">' + (selected ? Object.keys(selected).map((k) => '<div class="field"><span>' + esc(k) + '</span>' + esc(Array.isArray(selected[k]) ? selected[k].join(', ') : selected[k]) + '</div>').join('') : '') + '</div></article><article class="panel">' + formPanel(module, selected) + '</article></div></section>';
+  return topbar(module.label, module.description, 'Feature Workspace') + '<section class="content grid"><div class="panel"><div class="subfeatures">' + module.subfeatures.map((s) => '<span class="sub-pill">' + esc(s) + '</span>').join('') + '</div><div class="toolbar"><input placeholder="Search records" value="' + esc(state.query) + '" oninput="state.query=this.value;render();"><select onchange="state.status=this.value;render();">' + ['all', 'open', 'progress', 'review', 'blocked', 'complete', 'high'].map((x) => '<option value="' + x + '" ' + (state.status === x ? 'selected' : '') + '>' + x + '</option>').join('') + '</select>' + (can('write') ? '<button class="button" onclick="addNew(&quot;' + module.id + '&quot;)">Add</button>' : '<span class="pill">Read only</span>') + '</div><div class="table-wrap"><table><thead><tr>' + keys.map((k) => '<th>' + esc(k) + '</th>').join('') + '</tr></thead><tbody>' + rows.map((row) => '<tr class="' + (selected && selected.id === row.id ? 'selected' : '') + '" onclick="selectRow(&quot;' + row.id + '&quot;)">' + keys.map((k) => '<td>' + (/status|priority|riskScore/i.test(k) ? '<span class="pill ' + statusClass(row[k]) + '">' + esc(row[k]) + '</span>' : esc(Array.isArray(row[k]) ? row[k].join(', ') : row[k])) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div></div>' + upload + '</section>';
 }
 
-async function generateAiReview() {
-  const result = await api('/api/ai-center', { method: 'POST', body: JSON.stringify({ user: state.user, data: state.boot.data }) });
-  alert(result.text || result.note || 'AI review generated.');
-}
+
 
 async function runDueJobs() {
   const result = await api('/api/jobs/run-due', { method: 'POST', body: JSON.stringify({}) });
@@ -229,10 +231,7 @@ async function resetData() {
   await refresh();
 }
 
-function aiCenter() {
-  const ai = state.boot.aiCenter;
-  return topbar('AI Center', 'Professional AI review for operational risks, work queues, and next actions.', 'AI Review') + '<section class="content"><div class="button-row ai-actions"><button class="button" onclick="generateAiReview()">Generate Review</button><span class="pill">' + esc(ai.mode) + '</span><span class="muted">Model: ' + esc(ai.model) + '</span></div><div class="ai-layout"><article class="ai-section"><h3>' + esc(ai.headline) + '</h3><p>' + esc(ai.summary) + '</p><h3>Recommendations</h3><ul class="ai-list">' + ai.recommendations.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul></article><article class="ai-section"><h3>Risks</h3><ul class="ai-list">' + ai.risks.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul><p class="muted">' + esc(ai.disclaimer) + '</p></article></div></section>';
-}
+
 
 function rulesAndJobs() {
   return topbar('Rules & Jobs', 'Rules-based risk scoring, readiness checks, scheduled jobs, and backup controls.', 'Governance') + '<section class="content grid"><div class="grid columns-2"><article class="panel"><h3>Domain Analysis</h3><div class="table-wrap"><table><thead><tr><th>Module</th><th>Risk</th><th>Blocked</th><th>Overdue</th><th>Recommendation</th></tr></thead><tbody>' + state.boot.domainAnalysis.map((r) => '<tr><td>' + esc(r.module) + '</td><td><span class="pill ' + statusClass(r.avgRisk >= 70 ? 'High' : r.avgRisk >= 40 ? 'Review' : 'Low') + '">' + esc(r.avgRisk) + '</span></td><td>' + esc(r.blocked) + '</td><td>' + esc(r.overdue) + '</td><td>' + esc(r.recommendation) + '</td></tr>').join('') + '</tbody></table></div></article><article class="panel"><h3>Readiness</h3><ul class="work-list">' + state.boot.readiness.checks.map((c) => '<li><strong>' + esc(c.name) + '</strong><br><span class="pill ' + (c.pass ? 'ok' : 'warn') + '">' + (c.pass ? 'Pass' : 'Needs setup') + '</span> <span class="muted">' + esc(c.detail) + '</span></li>').join('') + '</ul></article></div><article class="panel"><h3>Admin Actions</h3><div class="button-row">' + (can('jobs') ? '<button class="button" onclick="runDueJobs()">Run Due-Notification Job</button>' : '') + '<button class="button secondary" onclick="downloadBackup()">Download Backup</button>' + (can('admin') ? '<button class="button danger" onclick="resetData()">Reset Seed Data</button>' : '') + '</div></article></section>';
@@ -252,6 +251,9 @@ function render() {
   else if (state.active === 'reports') inner = reports();
   else inner = moduleView(moduleById(state.active));
   shell(inner);
+  const dialog = document.querySelector('.operations-dialog');
+  document.body.style.overflow = dialog ? 'hidden' : '';
+  if (dialog) dialog.focus();
 }
 
 async function refresh() {
@@ -267,5 +269,111 @@ async function load() {
     logout();
   }
 }
+
+const reviewState = { fields: Object.fromEntries(['input', 'goal', 'context', 'audience', 'source_data', 'constraints', 'budget', 'deadline', 'tone', 'output_format'].map(key => [key, ''])), reports: [], selectedReport: null, result: null, controller: null, message: '', error: false, loaded: false };
+const reviewLabels = { input: 'Review request', goal: 'Goal', context: 'Context (optional)', audience: 'Audience (optional)', source_data: 'Additional source data (optional)', constraints: 'Constraints (optional)', budget: 'Budget (optional)', deadline: 'Deadline (optional)', tone: 'Tone (optional)', output_format: 'Report format (optional)' };
+
+function fillReviewPreset(index) {
+  if (reviewState.controller) return;
+  const title = state.boot.config.title;
+  reviewState.fields = {
+    input: ['Prepare an operational risk review', 'Prepare a team improvement plan', 'Compare operational priorities and review options'][index] + ' for ' + title,
+    goal: ['Identify the three most urgent review tasks.', 'Assign practical next steps, owners and success measures.', 'Compare options using source evidence, tradeoffs and uncertainties.'][index],
+    context: ['First review of the current stored operations.', 'Planning discussion for the operations team.', 'Detailed review for leadership and domain specialists.'][index],
+    audience: ['Operations owner', 'Operations team and responsible reviewers', 'Leadership and domain specialists'][index],
+    source_data: 'Use the current authorized record sample supplied by the server. No additional verified evidence is supplied in this example.',
+    constraints: 'Do not invent facts or completed actions. Preserve required approvals and identify missing evidence before recommending action.',
+    budget: ['Budget not yet approved; prioritize low cost review actions.', 'Example planning limit: $500; confirm before committing costs.', 'Compare low cost and resource intensive options; no spending authorized.'][index],
+    deadline: ['Within the next week', 'Within two weeks', 'Within the next month'][index],
+    tone: ['Clear and concise', 'Professional and collaborative', 'Detailed and evidence based'][index],
+    output_format: ['Executive summary and prioritized action list', 'Summary, risk review and owner/action/timing table', 'Detailed report with assumptions, comparison table, risks and next steps'][index]
+  };
+  reviewState.message = 'All 10 brief fields filled. Review the example before generating.'; reviewState.error = false; render();
+}
+
+function cancelAIReview(update = true) {
+  reviewState.controller?.abort(); reviewState.controller = null;
+  if (update) { reviewState.message = 'Request canceled.'; reviewState.error = false; render(); }
+}
+
+async function generateAiReview(event) {
+  event?.preventDefault();
+  if (reviewState.controller) return;
+  const form = document.getElementById('operations-ai-form');
+  if (form && !form.reportValidity()) return;
+  const controller = new AbortController(); reviewState.controller = controller;
+  reviewState.message = 'OpenRouter is preparing your review…'; reviewState.error = false; render();
+  try {
+    const result = await api('/api/ai-center', { method: 'POST', signal: controller.signal, body: JSON.stringify({ fields: reviewState.fields }) });
+    if (controller.signal.aborted) return;
+    reviewState.result = result; reviewState.reports = [result, ...reviewState.reports]; reviewState.message = 'Review saved to your report history.';
+  } catch (error) {
+    if (!controller.signal.aborted) { reviewState.message = error.message; reviewState.error = true; }
+  } finally { if (reviewState.controller === controller) reviewState.controller = null; if (!controller.signal.aborted) render(); }
+}
+
+async function loadReviewHistory() {
+  try { const result = await api('/api/ai-center/reports'); reviewState.reports = result.reports || []; reviewState.loaded = true; if (state.active === 'ai-center') render(); }
+  catch (error) { reviewState.loaded = true; reviewState.message = error.message; reviewState.error = true; if (state.active === 'ai-center') render(); }
+}
+
+function openReview(id) { reviewState.selectedReport = reviewState.reports.find(row => row.id === id) || null; render(); }
+function editReviewBrief() { reviewState.fields = { ...reviewState.selectedReport.fields }; reviewState.selectedReport = null; reviewState.message = 'Saved brief opened for editing. Generate to save a new review.'; render(); }
+async function renameReview() {
+  const report = reviewState.selectedReport;
+  if (!report) return;
+  const title = document.getElementById('operations-report-title').value;
+  try { const updated = await api('/api/ai-center/reports/' + encodeURIComponent(report.id), { method: 'PUT', body: JSON.stringify({ title }) }); reviewState.reports = reviewState.reports.map(row => row.id === updated.id ? updated : row); reviewState.selectedReport = updated; reviewState.error = false; render(); }
+  catch (error) { document.getElementById('operations-dialog-status').textContent = error.message; }
+}
+async function deleteReview() {
+  const report = reviewState.selectedReport;
+  if (!report || !confirm('Delete this saved AI review?')) return;
+  try { await api('/api/ai-center/reports/' + encodeURIComponent(report.id), { method: 'DELETE' }); reviewState.reports = reviewState.reports.filter(row => row.id !== report.id); reviewState.selectedReport = null; if (reviewState.result?.id === report.id) reviewState.result = null; render(); }
+  catch (error) { document.getElementById('operations-dialog-status').textContent = error.message; }
+}
+function closeOperationsDialog() { state.selected = null; state.formMode = 'view'; state.form = {}; reviewState.selectedReport = null; render(); }
+
+function aiCenter() {
+  if (!reviewState.loaded) { reviewState.loaded = true; loadReviewHistory(); }
+  const ai = state.boot.aiCenter;
+  const fields = Object.entries(reviewLabels).map(([key, label]) => '<label for="operations-ai-' + key + '">' + esc(label) + '<textarea id="operations-ai-' + key + '" name="' + key + '" maxlength="6000" ' + (['input', 'goal'].includes(key) ? 'required' : '') + ' ' + (reviewState.controller ? 'disabled' : '') + ' oninput="reviewState.fields[&quot;' + key + '&quot;]=this.value">' + esc(reviewState.fields[key]) + '</textarea></label>').join('');
+  const result = reviewState.result ? '<article class="panel operations-ai-result"><p class="eyebrow">Saved OpenRouter review · ' + esc(reviewState.result.model) + '</p><h3>' + esc(reviewState.result.title) + '</h3>' + BrowserAIReport.render(reviewState.result.text) + '</article>' : '';
+  const history = reviewState.reports.map(row => '<button class="button secondary" onclick="openReview(&quot;' + esc(row.id) + '&quot;)"><strong>' + esc(row.title) + '</strong><br><span>' + esc(new Date(row.createdAt).toLocaleString()) + ' · ' + esc(row.model) + '</span></button>').join('');
+  return topbar('AI Center', 'Review the complete brief, generate once with OpenRouter, and manage your saved reports.', 'AI Review') + '<section class="content grid"><article class="panel"><h3>Review brief</h3><p class="muted">Presets fill every brief field. They do not change operational records or grant approvals.</p><div class="operations-ai-presets">' + ['Quick review', 'Team plan', 'Detailed review'].map((label, index) => '<button type="button" class="button secondary" onclick="fillReviewPreset(' + index + ')" ' + (reviewState.controller ? 'disabled' : '') + '>' + label + '</button>').join('') + '</div><form id="operations-ai-form" onsubmit="generateAiReview(event)"><div class="operations-ai-fields">' + fields + '</div><div class="button-row"><button type="submit" class="button" ' + (!can('ai') || reviewState.controller ? 'disabled' : '') + '>' + (reviewState.controller ? 'Generating…' : 'Generate with OpenRouter') + '</button>' + (reviewState.controller ? '<button type="button" class="button secondary" onclick="cancelAIReview()">Cancel request</button>' : '') + '</div></form><p role="status" class="operations-ai-message ' + (reviewState.error ? 'error' : '') + '">' + esc(reviewState.message) + '</p></article>' + result + '<article class="panel"><h3>Your saved reviews</h3><div class="operations-ai-history">' + (history || '<p class="muted">No saved OpenRouter reviews yet.</p>') + '</div></article><article class="panel"><p class="eyebrow">Fixed rule snapshot · no model call</p><h3>' + esc(ai.headline) + '</h3><p>' + esc(ai.summary) + '</p><p class="muted">' + esc(ai.disclaimer) + '</p></article></section>';
+}
+
+function operationsDialog() {
+  const report = reviewState.selectedReport;
+  let body = '', title = '', footer = '';
+  if (report) {
+    title = report.title;
+    body = '<label for="operations-report-title">Report title<input id="operations-report-title" maxlength="140" value="' + esc(report.title) + '"></label><p class="muted">OpenRouter · ' + esc(report.model) + ' · ' + esc(new Date(report.createdAt).toLocaleString()) + '</p><p id="operations-dialog-status" role="status"></p>' + BrowserAIReport.render(report.text);
+    footer = '<button class="button secondary" onclick="editReviewBrief()">Edit brief</button><button class="button" onclick="renameReview()">Save title</button><button class="button danger" onclick="deleteReview()">Delete</button>';
+  } else {
+    const module = moduleById(state.active);
+    if (!module || (!state.selected && state.formMode === 'view')) return '';
+    const row = (state.boot.data[module.table] || []).find(item => item.id === state.selected);
+    if (!row && state.formMode !== 'new') return '';
+    title = state.formMode === 'new' ? 'Add ' + module.label + ' record' : row.item || module.label;
+    body = state.formMode === 'view' ? '<div class="detail-grid">' + Object.entries(row).map(([key, value]) => '<div class="field"><span>' + esc(key) + '</span>' + esc(Array.isArray(value) ? value.join(', ') : value) + '</div>').join('') + '</div>' : formPanel(module, row);
+    if (state.formMode === 'view') footer = (can('write') ? '<button class="button" onclick="editSelected(moduleById(state.active),state.boot.data[moduleById(state.active).table].find(row=>row.id===state.selected))">Edit</button>' : '') + (can('delete') ? '<button class="button danger" onclick="deleteSelected(moduleById(state.active).table,state.boot.data[moduleById(state.active).table].find(row=>row.id===state.selected))">Delete</button>' : '');
+  }
+  return '<div class="operations-dialog-backdrop" onclick="if(event.target===this)closeOperationsDialog()"><section class="operations-dialog" role="dialog" aria-modal="true" aria-labelledby="operations-dialog-heading" tabindex="-1"><header class="operations-dialog-header"><h2 class="operations-dialog-title" id="operations-dialog-heading">' + esc(title) + '</h2><button type="button" class="button secondary" onclick="closeOperationsDialog()" aria-label="Cancel dialog">Cancel</button></header><div class="operations-dialog-body">' + body + '</div><footer class="operations-dialog-footer"><div class="button-row">' + footer + '</div><button class="button secondary" onclick="closeOperationsDialog()">Cancel</button></footer></section></div>';
+}
+
+document.addEventListener('keydown', event => {
+  const dialog = document.querySelector('.operations-dialog');
+  if (!dialog) return;
+  if (event.key === 'Escape') closeOperationsDialog();
+  if (event.key === 'Tab') {
+    const controls = [...dialog.querySelectorAll('button,input,textarea,select,a[href],[tabindex]')].filter(node => !node.disabled && node.tabIndex >= 0);
+    const first = controls[0], last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
+});
+window.addEventListener('beforeunload', () => cancelAIReview(false));
+
 
 load().catch((err) => { document.getElementById('app').innerHTML = '<div class="loading">Failed to load app: ' + esc(err.message) + '</div>'; });

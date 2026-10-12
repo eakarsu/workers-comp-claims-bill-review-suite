@@ -6,6 +6,8 @@ const crypto = require('crypto');
 
 loadEnv();
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'app.config.json'), 'utf8'));
+const { createOperationsAI } = require('./operationsAI.cjs');
+const operationsAI = createOperationsAI({ config });
 const PORT = Number(process.env.PORT || config.port || 5500);
 const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -235,7 +237,7 @@ function readiness() {
       { name: 'Domain modules', pass: config.modules.length >= 8, detail: config.modules.length + ' domain modules' },
       { name: 'Standard operations modules', pass: standardModules.every((m) => store.data[m.table]), detail: standardModules.map((m) => m.label).join(', ') },
       { name: 'RBAC sessions', pass: true, detail: 'Admin, Manager, Analyst permissions enforced on API' },
-      { name: 'AI fallback', pass: true, detail: process.env.OPENROUTER_API_KEY ? 'OpenRouter key configured' : 'Local fallback active' },
+      { name: 'OpenRouter review', pass: Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_MODEL), detail: process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_MODEL ? 'Provider configuration supplied; generate a review to verify' : 'Configure OPENROUTER_API_KEY and OPENROUTER_MODEL' },
       { name: 'Database URL', pass: Boolean(process.env.DATABASE_URL), detail: process.env.DATABASE_URL ? 'Configured' : 'Not configured; using local JSON' }
     ]
   };
@@ -245,8 +247,8 @@ function aiCenter() {
   const analysis = analyzeDomain().sort((a, b) => b.avgRisk - a.avgRisk)[0];
   return {
     generatedAt: now(),
-    model: process.env.OPENROUTER_MODEL || 'local-rule-based-demo',
-    mode: process.env.OPENROUTER_API_KEY && !process.env.OPENROUTER_API_KEY.includes('changeme') ? 'OpenRouter ready' : 'Local safety fallback',
+    model: 'Fixed operational rules',
+    mode: 'Fixed rule snapshot · no model call',
     headline: config.title + ' operational review',
     summary: 'The highest-risk workflow is ' + analysis.module + ' with average risk ' + analysis.avgRisk + ', ' + analysis.blocked + ' blocked records, and ' + analysis.overdue + ' overdue records.',
     recommendations: [
@@ -366,42 +368,7 @@ setInterval(() => {
   if (store.settings.notificationsEnabled) runDueJobs('scheduler');
 }, 60 * 60 * 1000).unref();
 
-async function generateAiReview(payload) {
-  if (!process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY.includes('changeme')) {
-    return { source: 'local-fallback', review: aiCenter(), note: 'Set OPENROUTER_API_KEY in .env to use live AI generation.' };
-  }
-  const body = JSON.stringify({
-    model: process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',
-    messages: [
-      { role: 'system', content: 'You are an operations copilot. Provide concise, safe workflow recommendations.' },
-      { role: 'user', content: JSON.stringify(payload).slice(0, 12000) }
-    ]
-  });
-  return new Promise((resolve) => {
-    const request = https.request({
-      hostname: 'openrouter.ai',
-      path: '/api/v1/chat/completions',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.OPENROUTER_API_KEY, 'Content-Length': Buffer.byteLength(body) },
-      timeout: 12000
-    }, (response) => {
-      let text = '';
-      response.on('data', (chunk) => { text += chunk; });
-      response.on('end', () => {
-        try {
-          const parsed = JSON.parse(text);
-          resolve({ source: 'openrouter', text: parsed.choices?.[0]?.message?.content || text });
-        } catch {
-          resolve({ source: 'openrouter', text });
-        }
-      });
-    });
-    request.on('timeout', () => { request.destroy(); resolve({ source: 'local-fallback', review: aiCenter(), note: 'AI request timed out.' }); });
-    request.on('error', () => resolve({ source: 'local-fallback', review: aiCenter(), note: 'AI request failed.' }));
-    request.write(body);
-    request.end();
-  });
-}
+
 
 function serveStatic(req, res) {
   const parsed = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
@@ -427,7 +394,9 @@ const server = http.createServer(async (req, res) => {
     if (parsed.pathname === '/api/auth/demo-credentials' && req.method === 'GET') {
       if (process.env.NODE_ENV === 'production') return sendJson(res, { error: 'Not found' }, 404);
       res.setHeader('Cache-Control', 'no-store');
-      return sendJson(res, { email: `admin@${config.slug}.local`, password: 'admin123' });
+      const demoUser = store.users.find(user => user.email === `admin@${config.slug}.local` && user.active !== false);
+      if (!demoUser?.password) return sendJson(res, { error: 'Configured demo account is unavailable.' }, 404);
+      return sendJson(res, { email: demoUser.email, password: demoUser.password });
     }
     if (parsed.pathname === '/api/auth/login' && req.method === 'POST') {
       const body = await readBody(req);
@@ -492,11 +461,7 @@ const server = http.createServer(async (req, res) => {
       if (!session) return;
       return sendJson(res, aiCenter());
     }
-    if (parsed.pathname === '/api/ai-center' && req.method === 'POST') {
-      const session = requireAuth(req, res, 'ai');
-      if (!session) return;
-      return sendJson(res, await generateAiReview(await readBody(req)));
-    }
+    if (await operationsAI.handle(req, res, parsed.pathname, { requireAuth, readBody, sendJson, store, saveStore, audit })) return;
     if (parts[0] === 'api' && parts[1] === 'integrations' && parts[2] === 'test' && req.method === 'POST') {
       const session = requireAuth(req, res, 'write');
       if (!session) return;
@@ -584,7 +549,7 @@ const server = http.createServer(async (req, res) => {
     }
     return serveStatic(req, res);
   } catch (err) {
-    return sendJson(res, { error: err.message || 'Server error' }, 500);
+    return sendJson(res, { error: err.message || 'Server error' }, err.status || 500);
   }
 });
 
