@@ -1,7 +1,7 @@
 const { spawn } = require('child_process');
 const port = Number(process.env.SMOKE_PORT || 5999);
 const base = 'http://127.0.0.1:' + port;
-const child = spawn(process.execPath, ['server.js'], { cwd: process.cwd(), env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+const child = spawn(process.execPath, ['server.js'], { cwd: process.cwd(), env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', OPENROUTER_API_KEY: '', OPENAI_API_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let token = '';
 async function req(path, options = {}) {
@@ -45,5 +45,22 @@ async function req(path, options = {}) {
     blocked = true;
   }
   if (!blocked) throw new Error('RBAC write block failed');
+  const filtered = await req('/api/table/' + table + '?status=Complete');
+  if (!filtered.rows.every((r) => r.status === 'Complete')) throw new Error('server filter failed');
+  const jsonExport = await req('/api/export/' + table + '?format=json');
+  if (!Array.isArray(jsonExport.rows)) throw new Error('json export failed');
+  const triage = await req('/api/ai/claim-triage', { method: 'POST', body: JSON.stringify({ rows: [{ id:'C-1', item:'x', status:'Blocked', priority:'High', riskScore:0, dueDate:'2020-01-01' }] }) });
+  if (triage.aiGenerated !== false || !triage.sections?.length) throw new Error('ai fallback failed');
+  // wave5c: authenticated tasks CRUD + remaining domain AI fallbacks
+  const adminAgain = await req('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: 'admin@' + slug + '.local', password: 'admin123' }) }); token = adminAgain.token;
+  const unauth = await fetch(base + '/api/table/tasks'); if (unauth.status !== 401) throw new Error('tasks unauthenticated not 401');
+  const task = await req('/api/table/tasks', { method: 'POST', body: JSON.stringify({ item: 'Wave5C Task', owner: 'QA', priority: 'High', status: 'Open', dueDate: '2026-06-07', value: 'Test', notes: 'wave5c' }) });
+  const taskUpd = await req('/api/table/tasks/' + encodeURIComponent(task.row.id), { method: 'PUT', body: JSON.stringify({ status: 'Complete', expectedVersion: task.row.version }) });
+  if (taskUpd.row.status !== 'Complete') throw new Error('tasks update failed');
+  for (const fid of ['bill-review', 'litigation-risk']) {
+    const aiRes = await req('/api/ai/' + fid, { method: 'POST', body: JSON.stringify({}) });
+    if (aiRes.aiGenerated !== false || aiRes.mode !== 'deterministic-fallback' || !aiRes.sections?.length) throw new Error('domain AI fallback labelling failed for ' + fid);
+  }
+  await req('/api/table/tasks/' + encodeURIComponent(task.row.id), { method: 'DELETE' });
   console.log('Smoke test passed for ' + slug);
 })().catch((err) => { console.error(err); process.exitCode = 1; }).finally(() => child.kill());

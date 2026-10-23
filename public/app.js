@@ -40,19 +40,6 @@ async function login(event) {
   }
 }
 
-async function fillDemoCredentials() {
-  const error = document.querySelector('.login-error');
-  if (error) error.textContent = '';
-  try {
-    const credentials = await api('/api/auth/demo-credentials');
-    const email = document.querySelector('.login-form input[name="email"]');
-    const password = document.querySelector('.login-form input[name="password"]');
-    if (email) email.value = credentials.email;
-    if (password) password.value = credentials.password;
-  } catch (err) {
-    if (error) error.textContent = 'Demo credentials are unavailable. ' + err.message;
-  }
-}
 
 function logout() {
   cancelAIReview(false); reviewState.reports = []; reviewState.result = null; reviewState.selectedReport = null; reviewState.loaded = false;
@@ -113,7 +100,7 @@ async function renderLogin() {
     try { state.publicConfig = await api('/api/public-config'); } catch { state.publicConfig = { slug: 'app', title: 'Operations Suite' }; }
   }
   document.getElementById('app').className = 'auth-screen';
-  document.getElementById('app').innerHTML = '<main class="login-panel"><div class="brand-mark">AI</div><h1>' + esc(state.publicConfig.title) + '</h1><p class="muted">Sign in to open the sidebar app.</p><form class="login-form" onsubmit="login(event)"><label>Email<input name="email" autocomplete="username"></label><label>Password<input name="password" type="password" autocomplete="current-password"></label><button type="button" class="button" onclick="fillDemoCredentials()">Fill Demo Credentials</button><button class="button">Sign In</button><div class="login-error" role="status"></div></form></main>';
+  document.getElementById('app').innerHTML = '<main class="login-panel"><div class="brand-mark">AI</div><h1>' + esc(state.publicConfig.title) + '</h1><p class="muted">Sign in to open the sidebar app.</p><form class="login-form" onsubmit="login(event)"><label>Email<input name="email" autocomplete="username"></label><label>Password<input name="password" type="password" autocomplete="current-password"></label><button class="button">Sign In</button><div class="login-error" role="status"></div></form></main>';
 }
 
 function shell(inner) {
@@ -192,7 +179,7 @@ function formPanel(module, selected) {
     const add = can('write') ? '<button class="button" onclick="addNew(&quot;' + module.id + '&quot;)">Add Record</button>' : '';
     const del = can('delete') ? '<button class="button danger" onclick="deleteSelected(&quot;' + module.table + '&quot;, state.boot.data[&quot;' + module.table + '&quot;].find(r=>r.id===&quot;' + (selected ? selected.id : '') + '&quot;))">Delete</button>' : '';
     const integration = module.table === 'integrations' && selected && can('write') ? '<button class="button secondary" onclick="testIntegration(&quot;' + selected.id + '&quot;)">Test Integration</button>' : '';
-    return '<div class="button-row">' + add + edit + del + integration + '<a class="button secondary" href="/api/export/' + module.table + '">CSV Export</a></div>';
+    return '<div class="button-row">' + add + edit + del + integration + '<a class="button secondary" href="/api/export/' + module.table + '">CSV Export</a>' + '<button type="button" class="button secondary" onclick="exportJson(&quot;' + module.table + '&quot;)">JSON Export</button></div>';
   }
   const keys = Object.keys(state.form).filter((k) => !['createdAt', 'updatedAt', 'riskScore'].includes(k));
   return '<div class="edit-form"><h3>' + (state.formMode === 'new' ? 'Add Record' : 'Edit Record') + '</h3><div class="form-grid">' + keys.map((k) => '<label>' + esc(k) + '<input ' + (k === 'id' || k === 'version' || k === 'expectedVersion' ? 'readonly' : '') + ' value="' + esc(Array.isArray(state.form[k]) ? state.form[k].join(', ') : state.form[k]) + '" oninput="updateForm(&quot;' + k + '&quot;, this.value)"></label>').join('') + '</div><div class="button-row"><button class="button" onclick="saveForm(&quot;' + module.table + '&quot;)">Save</button><button class="button secondary" onclick="state.formMode=&quot;view&quot;;state.form={};render();">Cancel</button></div></div>';
@@ -334,13 +321,19 @@ async function deleteReview() {
 }
 function closeOperationsDialog() { state.selected = null; state.formMode = 'view'; state.form = {}; reviewState.selectedReport = null; render(); }
 
+const domainAiState = { result: null, message: '' };
+const domainAiFeatures = [{ id: 'claim-triage', title: 'Claim triage' }, { id: 'bill-review', title: 'Bill review savings review' }, { id: 'litigation-risk', title: 'Litigation risk review' }];
+async function runDomainAI(id) { domainAiState.message = 'Running domain analysis…'; render(); try { domainAiState.result = await api('/api/ai/' + encodeURIComponent(id), { method: 'POST', body: JSON.stringify({}) }); domainAiState.message = domainAiState.result.aiGenerated ? 'AI-generated result.' : 'Deterministic fallback — no AI provider configured (aiGenerated: false).'; } catch (e) { domainAiState.message = e.message; } render(); }
+function domainAiPanel() { const buttons = domainAiFeatures.map(f => '<button type="button" class="button secondary" onclick="runDomainAI(&quot;' + esc(f.id) + '&quot;)">' + esc(f.title) + '</button>').join(''); const result = domainAiState.result ? '<article class="panel"><p class="eyebrow">' + esc(domainAiState.result.aiGenerated ? 'AI-generated via ' + (domainAiState.result.provider || 'provider') : 'Deterministic fallback — no AI provider configured (aiGenerated: false)') + '</p>' + BrowserAIReport.render(domainAiState.result) + '</article>' : ''; return '<article class="panel"><h3>Domain AI (app records)</h3><p class="muted">Domain-grounded analysis over this app\'s own claims, bill-review, and litigation records. Without a provider key it returns a clearly labelled deterministic fallback (aiGenerated: false).</p><div class="button-row">' + buttons + '</div><p role="status" class="operations-ai-message">' + esc(domainAiState.message) + '</p></article>' + result; }
+async function exportJson(table) { const data = await api('/api/export/' + table + '?format=json'); const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = table + '.json'; a.click(); URL.revokeObjectURL(url); }
+
 function aiCenter() {
   if (!reviewState.loaded) { reviewState.loaded = true; loadReviewHistory(); }
   const ai = state.boot.aiCenter;
   const fields = Object.entries(reviewLabels).map(([key, label]) => '<label for="operations-ai-' + key + '">' + esc(label) + '<textarea id="operations-ai-' + key + '" name="' + key + '" maxlength="6000" ' + (['input', 'goal'].includes(key) ? 'required' : '') + ' ' + (reviewState.controller ? 'disabled' : '') + ' oninput="reviewState.fields[&quot;' + key + '&quot;]=this.value">' + esc(reviewState.fields[key]) + '</textarea></label>').join('');
   const result = reviewState.result ? '<article class="panel operations-ai-result"><p class="eyebrow">Saved OpenRouter review · ' + esc(reviewState.result.model) + '</p><h3>' + esc(reviewState.result.title) + '</h3>' + BrowserAIReport.render(reviewState.result.text) + '</article>' : '';
   const history = reviewState.reports.map(row => '<button class="button secondary" onclick="openReview(&quot;' + esc(row.id) + '&quot;)"><strong>' + esc(row.title) + '</strong><br><span>' + esc(new Date(row.createdAt).toLocaleString()) + ' · ' + esc(row.model) + '</span></button>').join('');
-  return topbar('AI Center', 'Review the complete brief, generate once with OpenRouter, and manage your saved reports.', 'AI Review') + '<section class="content grid"><article class="panel"><h3>Review brief</h3><p class="muted">Presets fill every brief field. They do not change operational records or grant approvals.</p><div class="operations-ai-presets">' + ['Quick review', 'Team plan', 'Detailed review'].map((label, index) => '<button type="button" class="button secondary" onclick="fillReviewPreset(' + index + ')" ' + (reviewState.controller ? 'disabled' : '') + '>' + label + '</button>').join('') + '</div><form id="operations-ai-form" onsubmit="generateAiReview(event)"><div class="operations-ai-fields">' + fields + '</div><div class="button-row"><button type="submit" class="button" ' + (!can('ai') || reviewState.controller ? 'disabled' : '') + '>' + (reviewState.controller ? 'Generating…' : 'Generate with OpenRouter') + '</button>' + (reviewState.controller ? '<button type="button" class="button secondary" onclick="cancelAIReview()">Cancel request</button>' : '') + '</div></form><p role="status" class="operations-ai-message ' + (reviewState.error ? 'error' : '') + '">' + esc(reviewState.message) + '</p></article>' + result + '<article class="panel"><h3>Your saved reviews</h3><div class="operations-ai-history">' + (history || '<p class="muted">No saved OpenRouter reviews yet.</p>') + '</div></article><article class="panel"><p class="eyebrow">Fixed rule snapshot · no model call</p><h3>' + esc(ai.headline) + '</h3><p>' + esc(ai.summary) + '</p><p class="muted">' + esc(ai.disclaimer) + '</p></article></section>';
+  return topbar('AI Center', 'Review the complete brief, generate once with OpenRouter, and manage your saved reports.', 'AI Review') + '<section class="content grid">' + domainAiPanel() + '<article class="panel"><h3>Review brief</h3><p class="muted">Presets fill every brief field. They do not change operational records or grant approvals.</p><div class="operations-ai-presets">' + ['Quick review', 'Team plan', 'Detailed review'].map((label, index) => '<button type="button" class="button secondary" onclick="fillReviewPreset(' + index + ')" ' + (reviewState.controller ? 'disabled' : '') + '>' + label + '</button>').join('') + '</div><form id="operations-ai-form" onsubmit="generateAiReview(event)"><div class="operations-ai-fields">' + fields + '</div><div class="button-row"><button type="submit" class="button" ' + (!can('ai') || reviewState.controller ? 'disabled' : '') + '>' + (reviewState.controller ? 'Generating…' : 'Generate with OpenRouter') + '</button>' + (reviewState.controller ? '<button type="button" class="button secondary" onclick="cancelAIReview()">Cancel request</button>' : '') + '</div></form><p role="status" class="operations-ai-message ' + (reviewState.error ? 'error' : '') + '">' + esc(reviewState.message) + '</p></article>' + result + '<article class="panel"><h3>Your saved reviews</h3><div class="operations-ai-history">' + (history || '<p class="muted">No saved OpenRouter reviews yet.</p>') + '</div></article><article class="panel"><p class="eyebrow">Fixed rule snapshot · no model call</p><h3>' + esc(ai.headline) + '</h3><p>' + esc(ai.summary) + '</p><p class="muted">' + esc(ai.disclaimer) + '</p></article></section>';
 }
 
 function operationsDialog() {
